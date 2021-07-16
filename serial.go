@@ -9,12 +9,6 @@ import (
 	"github.com/goburrow/serial"
 )
 
-const (
-	// Default timeout
-	serialTimeout     = 5 * time.Second
-	serialIdleTimeout = 60 * time.Second
-)
-
 // serialPort has configuration and I/O controller.
 type serialPort struct {
 	// Serial port configuration.
