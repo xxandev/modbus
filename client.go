@@ -147,6 +147,17 @@ func (c *MBClient) WriteSingleCoil(address, value uint16) ([]byte, error) {
 	})
 }
 
+func (c *MBClient) WriteSingleCoilBool(address uint16, value bool) ([]byte, error) {
+	var v uint16 = 0x0000
+	if value {
+		v = 0xFF00
+	}
+	return c.cln.Encode(&ProtocolDataUnit{
+		FunctionCode: FuncCodeWriteSingleCoil,
+		Data:         dataBlock(address, v),
+	})
+}
+
 // Request:
 //  Function code         : 1 byte (0x06)
 //  Register address      : 2 bytes
