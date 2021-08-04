@@ -10,17 +10,101 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/goburrow/serial"
 )
 
-type RTUTransport struct {
-	rtuSerialTransporter
+// serialPort has configuration and I/O controller.
+type serialPort struct {
+	// Serial port configuration.
+	serial.Config
+
+	Logger      *log.Logger
+	IdleTimeout time.Duration
+
+	mu sync.Mutex
+	// port is platform-dependent data structure for serial port.
+	port         io.ReadWriteCloser
+	lastActivity time.Time
+	closeTimer   *time.Timer
 }
 
-func NewRTUTransport() *RTUTransport {
-	return &RTUTransport{}
+func (mb *serialPort) Connect() (err error) {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+
+	return mb.connect()
 }
 
-func (t *RTUTransport) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+// connect connects to the serial port if it is not connected. Caller must hold the mutex.
+func (mb *serialPort) connect() error {
+	if mb.port == nil {
+		port, err := serial.Open(&mb.Config)
+		if err != nil {
+			return err
+		}
+		mb.port = port
+	}
+	return nil
+}
+
+func (mb *serialPort) Close() (err error) {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+
+	return mb.close()
+}
+
+// close closes the serial port if it is connected. Caller must hold the mutex.
+func (mb *serialPort) close() (err error) {
+	if mb.port != nil {
+		err = mb.port.Close()
+		mb.port = nil
+	}
+	return
+}
+
+func (mb *serialPort) logf(format string, v ...interface{}) {
+	if mb.Logger != nil {
+		mb.Logger.Printf(format, v...)
+	}
+}
+
+func (mb *serialPort) startCloseTimer() {
+	if mb.IdleTimeout <= 0 {
+		return
+	}
+	if mb.closeTimer == nil {
+		mb.closeTimer = time.AfterFunc(mb.IdleTimeout, mb.closeIdle)
+	} else {
+		mb.closeTimer.Reset(mb.IdleTimeout)
+	}
+}
+
+// closeIdle closes the connection if last activity is passed behind IdleTimeout.
+func (mb *serialPort) closeIdle() {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+
+	if mb.IdleTimeout <= 0 {
+		return
+	}
+	idle := time.Now().Sub(mb.lastActivity)
+	if idle >= mb.IdleTimeout {
+		mb.logf("modbus: closing connection due to idle timeout: %v", idle)
+		mb.close()
+	}
+}
+
+// rtuSerialTransporter implements Transporter interface.
+type RTUtransporter struct {
+	serialPort
+}
+
+func NewRTU() *RTUtransporter {
+	return &RTUtransporter{}
+}
+func (t *RTUtransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
 	t.Address = address
 	t.BaudRate = baud
 	t.DataBits = databits
@@ -30,78 +114,7 @@ func (t *RTUTransport) Set(address string, baud, databits int, parity string, st
 	t.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-// rtuPackager implements Packager interface.
-type rtuPackager struct {
-	SlaveId byte
-}
-
-// Encode encodes PDU in a RTU frame:
-//  Slave Address   : 1 byte
-//  Function        : 1 byte
-//  Data            : 0 up to 252 bytes
-//  CRC             : 2 byte
-func (mb *rtuPackager) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
-	length := len(pdu.Data) + 4
-	if length > rtuMaxSize {
-		err = fmt.Errorf("modbus: length of data '%v' must not be bigger than '%v'", length, rtuMaxSize)
-		return
-	}
-	adu = make([]byte, length)
-
-	adu[0] = mb.SlaveId
-	adu[1] = pdu.FunctionCode
-	copy(adu[2:], pdu.Data)
-
-	// Append crc
-	var crc crc
-	crc.reset().pushBytes(adu[0 : length-2])
-	checksum := crc.value()
-
-	adu[length-1] = byte(checksum >> 8)
-	adu[length-2] = byte(checksum)
-	return
-}
-
-// Verify verifies response length and slave id.
-func (mb *rtuPackager) Verify(aduRequest []byte, aduResponse []byte) (err error) {
-	length := len(aduResponse)
-	// Minimum size (including address, function and CRC)
-	if length < rtuMinSize {
-		err = fmt.Errorf("modbus: response length '%v' does not meet minimum '%v'", length, rtuMinSize)
-		return
-	}
-	// Slave address must match
-	if aduResponse[0] != aduRequest[0] {
-		err = fmt.Errorf("modbus: response slave id '%v' does not match request '%v'", aduResponse[0], aduRequest[0])
-		return
-	}
-	return
-}
-
-// Decode extracts PDU from RTU frame and verify CRC.
-func (mb *rtuPackager) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
-	length := len(adu)
-	// Calculate checksum
-	var crc crc
-	crc.reset().pushBytes(adu[0 : length-2])
-	checksum := uint16(adu[length-1])<<8 | uint16(adu[length-2])
-	if checksum != crc.value() {
-		err = fmt.Errorf("modbus: response crc '%v' does not match expected '%v'", checksum, crc.value())
-		return
-	}
-	// Function code & data
-	pdu = &ProtocolDataUnit{}
-	pdu.FunctionCode = adu[1]
-	pdu.Data = adu[2 : length-2]
-	return
-}
-
-// rtuSerialTransporter implements Transporter interface.
-type rtuSerialTransporter struct {
-	serialPort
-}
-
-func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+func (mb *RTUtransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
 	// Make sure port is connected
 	if err = mb.serialPort.connect(); err != nil {
 		return
@@ -156,7 +169,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, war
 
 // calculateDelay roughly calculates time needed for the next frame.
 // See MODBUS over Serial Line - Specification and Implementation Guide (page 13).
-func (mb *rtuSerialTransporter) calculateDelay(chars int) time.Duration {
+func (mb *RTUtransporter) calculateDelay(chars int) time.Duration {
 	var characterDelay, frameDelay int // us
 
 	if mb.BaudRate <= 0 || mb.BaudRate > 19200 {
@@ -220,7 +233,7 @@ func calculateResponseLength(adu []byte) int {
  */
 
 // tcpTransporter implements Transporter interface.
-type tcpTransporter struct {
+type TCPtransporter struct {
 	// Connect string
 	Address string
 	// Connect & Read timeout
@@ -237,8 +250,16 @@ type tcpTransporter struct {
 	lastActivity time.Time
 }
 
+func NewTCP(address string) *TCPtransporter {
+	h := &TCPtransporter{}
+	h.Address = address
+	h.Timeout = tcpTimeout
+	h.IdleTimeout = tcpIdleTimeout
+	return h
+}
+
 // Send sends data to server and ensures response length is greater than header length.
-func (mb *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
+func (mb *TCPtransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
@@ -267,6 +288,7 @@ func (mb *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, err error
 	if _, err = io.ReadFull(mb.conn, data[:tcpHeaderSize]); err != nil {
 		return
 	}
+	// fmt.Println("===============", data)
 	// Read length, ignore transaction & protocol id (4 bytes)
 	length := int(binary.BigEndian.Uint16(data[4:]))
 	if length <= 0 {
@@ -291,14 +313,14 @@ func (mb *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, err error
 
 // Connect establishes a new connection to the address in Address.
 // Connect and Close are exported so that multiple requests can be done with one session
-func (mb *tcpTransporter) Connect() error {
+func (mb *TCPtransporter) Connect() error {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
 	return mb.connect()
 }
 
-func (mb *tcpTransporter) connect() error {
+func (mb *TCPtransporter) connect() error {
 	if mb.conn == nil {
 		dialer := net.Dialer{Timeout: mb.Timeout}
 		conn, err := dialer.Dial("tcp", mb.Address)
@@ -310,7 +332,7 @@ func (mb *tcpTransporter) connect() error {
 	return nil
 }
 
-func (mb *tcpTransporter) startCloseTimer() {
+func (mb *TCPtransporter) startCloseTimer() {
 	if mb.IdleTimeout <= 0 {
 		return
 	}
@@ -322,7 +344,7 @@ func (mb *tcpTransporter) startCloseTimer() {
 }
 
 // Close closes current connection.
-func (mb *tcpTransporter) Close() error {
+func (mb *TCPtransporter) Close() error {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
@@ -331,7 +353,7 @@ func (mb *tcpTransporter) Close() error {
 
 // flush flushes pending data in the connection,
 // returns io.EOF if connection is closed.
-func (mb *tcpTransporter) flush(b []byte) (err error) {
+func (mb *TCPtransporter) flush(b []byte) (err error) {
 	if err = mb.conn.SetReadDeadline(time.Now()); err != nil {
 		return
 	}
@@ -345,14 +367,14 @@ func (mb *tcpTransporter) flush(b []byte) (err error) {
 	return
 }
 
-func (mb *tcpTransporter) logf(format string, v ...interface{}) {
+func (mb *TCPtransporter) logf(format string, v ...interface{}) {
 	if mb.Logger != nil {
 		mb.Logger.Printf(format, v...)
 	}
 }
 
 // closeLocked closes current connection. Caller must hold the mutex before calling this method.
-func (mb *tcpTransporter) close() (err error) {
+func (mb *TCPtransporter) close() (err error) {
 	if mb.conn != nil {
 		err = mb.conn.Close()
 		mb.conn = nil
@@ -361,7 +383,7 @@ func (mb *tcpTransporter) close() (err error) {
 }
 
 // closeIdle closes the connection if last activity is passed behind IdleTimeout.
-func (mb *tcpTransporter) closeIdle() {
+func (mb *TCPtransporter) closeIdle() {
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
@@ -390,11 +412,21 @@ func (mb *tcpTransporter) closeIdle() {
  */
 
 // asciiSerialTransporter implements Transporter interface.
-type asciiSerialTransporter struct {
+type ASCIItransporter struct {
 	serialPort
 }
 
-func (mb *asciiSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
+func (t *ASCIItransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	t.Address = address
+	t.BaudRate = baud
+	t.DataBits = databits
+	t.Parity = parity
+	t.StopBits = stopbits
+	t.Timeout = time.Duration(timeout) * time.Millisecond
+	t.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
+}
+
+func (mb *ASCIItransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
 	mb.serialPort.mu.Lock()
 	defer mb.serialPort.mu.Unlock()
 
