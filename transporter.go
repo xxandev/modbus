@@ -8,11 +8,143 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/goburrow/serial"
 )
+
+type ApiTransporter interface {
+	Connect() error
+	Close() error
+	Send([]byte) ([]byte, error, error)
+}
+
+type MBTransporter struct {
+	mode        string
+	addr        string
+	baudrate    int
+	databits    int
+	parity      string
+	stopbits    int
+	timeout     int64
+	idletimeout int64
+
+	t ApiTransporter
+}
+
+func NewTransporter() *MBTransporter {
+	return &MBTransporter{}
+}
+
+func (mbt *MBTransporter) GetMode() string       { return mbt.mode }
+func (mbt *MBTransporter) GetAddress() string    { return mbt.addr }
+func (mbt *MBTransporter) GetBaudRate() int      { return mbt.baudrate }
+func (mbt *MBTransporter) GetDataBits() int      { return mbt.databits }
+func (mbt *MBTransporter) GetParity() string     { return mbt.parity }
+func (mbt *MBTransporter) GetStopBits() int      { return mbt.stopbits }
+func (mbt *MBTransporter) GetTimeout() int64     { return mbt.timeout }
+func (mbt *MBTransporter) GetIdleTimeout() int64 { return mbt.idletimeout }
+
+func (mbt *MBTransporter) SetMode(value string)       { mbt.mode = value }
+func (mbt *MBTransporter) SetAddress(value string)    { mbt.addr = value }
+func (mbt *MBTransporter) SetBaudRate(value int)      { mbt.baudrate = value }
+func (mbt *MBTransporter) SetDataBits(value int)      { mbt.databits = value }
+func (mbt *MBTransporter) SetParity(value string)     { mbt.parity = value }
+func (mbt *MBTransporter) SetStopBits(value int)      { mbt.stopbits = value }
+func (mbt *MBTransporter) SetTimeout(value int64)     { mbt.timeout = value }
+func (mbt *MBTransporter) SetIdleTimeout(value int64) { mbt.idletimeout = value }
+
+func (mbt *MBTransporter) SetTCP(address string, timeout, idletimeout int64) {
+	mbt.mode = "tcp"
+	mbt.addr = address
+	mbt.timeout = timeout
+	mbt.idletimeout = idletimeout
+}
+
+func (mbt *MBTransporter) SetRTU(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	mbt.mode = "rtu"
+	mbt.addr = address
+	mbt.baudrate = baud
+	mbt.databits = databits
+	mbt.parity = parity
+	mbt.stopbits = stopbits
+	mbt.timeout = timeout
+	mbt.idletimeout = idletimeout
+}
+
+func (mbt *MBTransporter) SetASCII(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	mbt.mode = "ascii"
+	mbt.addr = address
+	mbt.baudrate = baud
+	mbt.databits = databits
+	mbt.parity = parity
+	mbt.stopbits = stopbits
+	mbt.timeout = timeout
+	mbt.idletimeout = idletimeout
+}
+
+func (mbt *MBTransporter) Connect() error {
+	switch strings.ToLower(mbt.mode) {
+	case "rtu":
+		rtu := rtuTransporter{}
+		rtu.Set(mbt.addr, mbt.baudrate, mbt.databits, mbt.parity, mbt.stopbits, mbt.timeout, mbt.idletimeout)
+		if err := rtu.Connect(); err != nil {
+			return err
+		}
+		mbt.t = &rtu
+		return nil
+	case "tcp":
+		tcp := tcpTransporter{}
+		tcp.Set(mbt.addr, mbt.timeout, mbt.idletimeout)
+		if err := tcp.Connect(); err != nil {
+			return err
+		}
+		mbt.t = &tcp
+		return nil
+	case "ascii":
+		ascii := asciiTransporter{}
+		ascii.Set(mbt.addr, mbt.baudrate, mbt.databits, mbt.parity, mbt.stopbits, mbt.timeout, mbt.idletimeout)
+		if err := ascii.Connect(); err != nil {
+			return err
+		}
+		mbt.t = &ascii
+		return nil
+	}
+	return fmt.Errorf("unknown connection type")
+}
+func (mbt *MBTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+	return mbt.t.Send(aduRequest)
+}
+
+/*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ */
 
 // serialPort has configuration and I/O controller.
 type serialPort struct {
@@ -97,47 +229,48 @@ func (mb *serialPort) closeIdle() {
 }
 
 // rtuSerialTransporter implements Transporter interface.
-type RTUtransporter struct {
+type rtuTransporter struct {
 	serialPort
 }
 
-func NewRTU() *RTUtransporter {
-	return &RTUtransporter{}
-}
-func (t *RTUtransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
-	t.Address = address
-	t.BaudRate = baud
-	t.DataBits = databits
-	t.Parity = parity
-	t.StopBits = stopbits
-	t.Timeout = time.Duration(timeout) * time.Millisecond
-	t.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
+// func NewRTU(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) *RTUtransporter {
+// 	return &RTUtransporter{}
+// }
+
+func (rtu *rtuTransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	rtu.Address = address
+	rtu.BaudRate = baud
+	rtu.DataBits = databits
+	rtu.Parity = parity
+	rtu.StopBits = stopbits
+	rtu.Timeout = time.Duration(timeout) * time.Millisecond
+	rtu.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-func (mb *RTUtransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+func (rtu *rtuTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
 	// Make sure port is connected
-	if err = mb.serialPort.connect(); err != nil {
+	if err = rtu.serialPort.connect(); err != nil {
 		return
 	}
 	// Start the timer to close when idle
-	mb.serialPort.lastActivity = time.Now()
-	mb.serialPort.startCloseTimer()
+	rtu.serialPort.lastActivity = time.Now()
+	rtu.serialPort.startCloseTimer()
 	// Send the request
-	mb.serialPort.logf("modbus: sending % x\n", aduRequest)
-	if _, err = mb.port.Write(aduRequest); err != nil {
+	rtu.serialPort.logf("modbus: sending % x\n", aduRequest)
+	if _, err = rtu.port.Write(aduRequest); err != nil {
 		return
 	}
 	function := aduRequest[1]
 	functionFail := aduRequest[1] & 0x80
 	bytesToRead := calculateResponseLength(aduRequest)
-	time.Sleep(mb.calculateDelay(len(aduRequest) + bytesToRead))
+	time.Sleep(rtu.calculateDelay(len(aduRequest) + bytesToRead))
 
 	var n int
 	var n1 int
 	var data [rtuMaxSize]byte
 	//We first read the minimum length and then read either the full package
 	//or the error package, depending on the error status (byte 2 of the response)
-	n, warn = io.ReadAtLeast(mb.port, data[:], rtuMinSize)
+	n, warn = io.ReadAtLeast(rtu.port, data[:], rtuMinSize)
 	if warn != nil {
 		return
 	}
@@ -147,7 +280,7 @@ func (mb *RTUtransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err
 		if n < bytesToRead {
 			if bytesToRead > rtuMinSize && bytesToRead <= rtuMaxSize {
 				if bytesToRead > n {
-					n1, warn = io.ReadFull(mb.port, data[n:bytesToRead])
+					n1, warn = io.ReadFull(rtu.port, data[n:bytesToRead])
 					n += n1
 				}
 			}
@@ -155,7 +288,7 @@ func (mb *RTUtransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err
 	} else if data[1] == functionFail {
 		//for error we need to read 5 bytes
 		if n < rtuExceptionSize {
-			n1, warn = io.ReadFull(mb.port, data[n:rtuExceptionSize])
+			n1, warn = io.ReadFull(rtu.port, data[n:rtuExceptionSize])
 		}
 		n += n1
 	}
@@ -163,13 +296,13 @@ func (mb *RTUtransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err
 		return
 	}
 	aduResponse = data[:n]
-	mb.serialPort.logf("modbus: received % x\n", aduResponse)
+	rtu.serialPort.logf("modbus: received % x\n", aduResponse)
 	return
 }
 
 // calculateDelay roughly calculates time needed for the next frame.
 // See MODBUS over Serial Line - Specification and Implementation Guide (page 13).
-func (mb *RTUtransporter) calculateDelay(chars int) time.Duration {
+func (mb *rtuTransporter) calculateDelay(chars int) time.Duration {
 	var characterDelay, frameDelay int // us
 
 	if mb.BaudRate <= 0 || mb.BaudRate > 19200 {
@@ -233,7 +366,7 @@ func calculateResponseLength(adu []byte) int {
  */
 
 // tcpTransporter implements Transporter interface.
-type TCPtransporter struct {
+type tcpTransporter struct {
 	// Connect string
 	Address string
 	// Connect & Read timeout
@@ -250,115 +383,121 @@ type TCPtransporter struct {
 	lastActivity time.Time
 }
 
-func NewTCP(address string) *TCPtransporter {
-	h := &TCPtransporter{}
-	h.Address = address
-	h.Timeout = tcpTimeout
-	h.IdleTimeout = tcpIdleTimeout
-	return h
+// func NewTCP(address string, timeout, idletimeout int64) *TCPtransporter {
+// 	// t := &TCPtransporter{}
+// 	// t.Address = address
+// 	// t.Timeout = tcpTimeout
+// 	// t.IdleTimeout = tcpIdleTimeout
+// 	return &TCPtransporter{}
+// }
+
+func (tcp *tcpTransporter) Set(address string, timeout, idletimeout int64) {
+	tcp.Address = address
+	tcp.Timeout = time.Duration(timeout) * time.Millisecond
+	tcp.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
 // Send sends data to server and ensures response length is greater than header length.
-func (mb *TCPtransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
+func (tcp *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+	tcp.mu.Lock()
+	defer tcp.mu.Unlock()
 
 	// Establish a new connection if not connected
-	if err = mb.connect(); err != nil {
+	if err = tcp.connect(); err != nil {
 		return
 	}
 	// Set timer to close when idle
-	mb.lastActivity = time.Now()
-	mb.startCloseTimer()
+	tcp.lastActivity = time.Now()
+	tcp.startCloseTimer()
 	// Set write and read timeout
 	var timeout time.Time
-	if mb.Timeout > 0 {
-		timeout = mb.lastActivity.Add(mb.Timeout)
+	if tcp.Timeout > 0 {
+		timeout = tcp.lastActivity.Add(tcp.Timeout)
 	}
-	if err = mb.conn.SetDeadline(timeout); err != nil {
+	if err = tcp.conn.SetDeadline(timeout); err != nil {
 		return
 	}
 	// Send data
-	mb.logf("modbus: sending % x", aduRequest)
-	if _, err = mb.conn.Write(aduRequest); err != nil {
+	tcp.logf("modbus: sending % x", aduRequest)
+	if _, err = tcp.conn.Write(aduRequest); err != nil {
 		return
 	}
 	// Read header first
 	var data [tcpMaxLength]byte
-	if _, err = io.ReadFull(mb.conn, data[:tcpHeaderSize]); err != nil {
+	if _, err = io.ReadFull(tcp.conn, data[:tcpHeaderSize]); err != nil {
 		return
 	}
 	// fmt.Println("===============", data)
 	// Read length, ignore transaction & protocol id (4 bytes)
 	length := int(binary.BigEndian.Uint16(data[4:]))
 	if length <= 0 {
-		mb.flush(data[:])
+		tcp.flush(data[:])
 		err = fmt.Errorf("modbus: length in response header '%v' must not be zero", length)
 		return
 	}
 	if length > (tcpMaxLength - (tcpHeaderSize - 1)) {
-		mb.flush(data[:])
+		tcp.flush(data[:])
 		err = fmt.Errorf("modbus: length in response header '%v' must not greater than '%v'", length, tcpMaxLength-tcpHeaderSize+1)
 		return
 	}
 	// Skip unit id
 	length += tcpHeaderSize - 1
-	if _, err = io.ReadFull(mb.conn, data[tcpHeaderSize:length]); err != nil {
+	if _, err = io.ReadFull(tcp.conn, data[tcpHeaderSize:length]); err != nil {
 		return
 	}
 	aduResponse = data[:length]
-	mb.logf("modbus: received % x\n", aduResponse)
+	tcp.logf("modbus: received % x\n", aduResponse)
 	return
 }
 
 // Connect establishes a new connection to the address in Address.
 // Connect and Close are exported so that multiple requests can be done with one session
-func (mb *TCPtransporter) Connect() error {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
+func (tcp *tcpTransporter) Connect() error {
+	tcp.mu.Lock()
+	defer tcp.mu.Unlock()
 
-	return mb.connect()
+	return tcp.connect()
 }
 
-func (mb *TCPtransporter) connect() error {
-	if mb.conn == nil {
-		dialer := net.Dialer{Timeout: mb.Timeout}
-		conn, err := dialer.Dial("tcp", mb.Address)
+func (tcp *tcpTransporter) connect() error {
+	if tcp.conn == nil {
+		dialer := net.Dialer{Timeout: tcp.Timeout}
+		conn, err := dialer.Dial("tcp", tcp.Address)
 		if err != nil {
 			return err
 		}
-		mb.conn = conn
+		tcp.conn = conn
 	}
 	return nil
 }
 
-func (mb *TCPtransporter) startCloseTimer() {
-	if mb.IdleTimeout <= 0 {
+func (tcp *tcpTransporter) startCloseTimer() {
+	if tcp.IdleTimeout <= 0 {
 		return
 	}
-	if mb.closeTimer == nil {
-		mb.closeTimer = time.AfterFunc(mb.IdleTimeout, mb.closeIdle)
+	if tcp.closeTimer == nil {
+		tcp.closeTimer = time.AfterFunc(tcp.IdleTimeout, tcp.closeIdle)
 	} else {
-		mb.closeTimer.Reset(mb.IdleTimeout)
+		tcp.closeTimer.Reset(tcp.IdleTimeout)
 	}
 }
 
 // Close closes current connection.
-func (mb *TCPtransporter) Close() error {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
+func (tcp *tcpTransporter) Close() error {
+	tcp.mu.Lock()
+	defer tcp.mu.Unlock()
 
-	return mb.close()
+	return tcp.close()
 }
 
 // flush flushes pending data in the connection,
 // returns io.EOF if connection is closed.
-func (mb *TCPtransporter) flush(b []byte) (err error) {
-	if err = mb.conn.SetReadDeadline(time.Now()); err != nil {
+func (tcp *tcpTransporter) flush(b []byte) (err error) {
+	if err = tcp.conn.SetReadDeadline(time.Now()); err != nil {
 		return
 	}
 	// Timeout setting will be reset when reading
-	if _, err = mb.conn.Read(b); err != nil {
+	if _, err = tcp.conn.Read(b); err != nil {
 		// Ignore timeout error
 		if netError, ok := err.(net.Error); ok && netError.Timeout() {
 			err = nil
@@ -367,33 +506,33 @@ func (mb *TCPtransporter) flush(b []byte) (err error) {
 	return
 }
 
-func (mb *TCPtransporter) logf(format string, v ...interface{}) {
-	if mb.Logger != nil {
-		mb.Logger.Printf(format, v...)
+func (tcp *tcpTransporter) logf(format string, v ...interface{}) {
+	if tcp.Logger != nil {
+		tcp.Logger.Printf(format, v...)
 	}
 }
 
 // closeLocked closes current connection. Caller must hold the mutex before calling this method.
-func (mb *TCPtransporter) close() (err error) {
-	if mb.conn != nil {
-		err = mb.conn.Close()
-		mb.conn = nil
+func (tcp *tcpTransporter) close() (err error) {
+	if tcp.conn != nil {
+		err = tcp.conn.Close()
+		tcp.conn = nil
 	}
 	return
 }
 
 // closeIdle closes the connection if last activity is passed behind IdleTimeout.
-func (mb *TCPtransporter) closeIdle() {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
+func (tcp *tcpTransporter) closeIdle() {
+	tcp.mu.Lock()
+	defer tcp.mu.Unlock()
 
-	if mb.IdleTimeout <= 0 {
+	if tcp.IdleTimeout <= 0 {
 		return
 	}
-	idle := time.Now().Sub(mb.lastActivity)
-	if idle >= mb.IdleTimeout {
-		mb.logf("modbus: closing connection due to idle timeout: %v", idle)
-		mb.close()
+	idle := time.Now().Sub(tcp.lastActivity)
+	if idle >= tcp.IdleTimeout {
+		tcp.logf("modbus: closing connection due to idle timeout: %v", idle)
+		tcp.close()
 	}
 }
 
@@ -412,35 +551,35 @@ func (mb *TCPtransporter) closeIdle() {
  */
 
 // asciiSerialTransporter implements Transporter interface.
-type ASCIItransporter struct {
+type asciiTransporter struct {
 	serialPort
 }
 
-func (t *ASCIItransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
-	t.Address = address
-	t.BaudRate = baud
-	t.DataBits = databits
-	t.Parity = parity
-	t.StopBits = stopbits
-	t.Timeout = time.Duration(timeout) * time.Millisecond
-	t.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
+func (ascii *asciiTransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	ascii.Address = address
+	ascii.BaudRate = baud
+	ascii.DataBits = databits
+	ascii.Parity = parity
+	ascii.StopBits = stopbits
+	ascii.Timeout = time.Duration(timeout) * time.Millisecond
+	ascii.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-func (mb *ASCIItransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
-	mb.serialPort.mu.Lock()
-	defer mb.serialPort.mu.Unlock()
+func (ascii *asciiTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+	ascii.serialPort.mu.Lock()
+	defer ascii.serialPort.mu.Unlock()
 
 	// Make sure port is connected
-	if err = mb.serialPort.connect(); err != nil {
+	if err = ascii.serialPort.connect(); err != nil {
 		return
 	}
 	// Start the timer to close when idle
-	mb.serialPort.lastActivity = time.Now()
-	mb.serialPort.startCloseTimer()
+	ascii.serialPort.lastActivity = time.Now()
+	ascii.serialPort.startCloseTimer()
 
 	// Send the request
-	mb.serialPort.logf("modbus: sending %q\n", aduRequest)
-	if _, err = mb.port.Write(aduRequest); err != nil {
+	ascii.serialPort.logf("modbus: sending %q\n", aduRequest)
+	if _, err = ascii.port.Write(aduRequest); err != nil {
 		return
 	}
 	// Get the response
@@ -448,7 +587,7 @@ func (mb *ASCIItransporter) Send(aduRequest []byte) (aduResponse []byte, err err
 	var data [asciiMaxSize]byte
 	length := 0
 	for {
-		if n, err = mb.port.Read(data[length:]); err != nil {
+		if n, err = ascii.port.Read(data[length:]); err != nil {
 			return
 		}
 		length += n
@@ -463,7 +602,7 @@ func (mb *ASCIItransporter) Send(aduRequest []byte) (aduResponse []byte, err err
 		}
 	}
 	aduResponse = data[:length]
-	mb.serialPort.logf("modbus: received %q\n", aduResponse)
+	ascii.serialPort.logf("modbus: received %q\n", aduResponse)
 	return
 }
 
