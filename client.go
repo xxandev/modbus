@@ -26,12 +26,6 @@ func NewClient() *MBClient {
 	return &MBClient{}
 }
 
-func NewSetClient(id byte, mode string) *MBClient {
-	mbc := NewClient()
-	mbc.Set(id, mode)
-	return mbc
-}
-
 func (mbc *MBClient) GetID() byte     { return mbc.cln.GetID() }
 func (mbc *MBClient) GetMode() string { return mbc.mode }
 
