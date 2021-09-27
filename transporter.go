@@ -56,6 +56,17 @@ func (mbt *MBTransporter) SetStopBits(value int)      { mbt.stopbits = value }
 func (mbt *MBTransporter) SetTimeout(value int64)     { mbt.timeout = value }
 func (mbt *MBTransporter) SetIdleTimeout(value int64) { mbt.idletimeout = value }
 
+func (mbt *MBTransporter) Set(mode, address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+	mbt.mode = mode
+	mbt.addr = address
+	mbt.baudrate = baud
+	mbt.databits = databits
+	mbt.parity = parity
+	mbt.stopbits = stopbits
+	mbt.timeout = timeout
+	mbt.idletimeout = idletimeout
+}
+
 func (mbt *MBTransporter) SetTCP(address string, timeout, idletimeout int64) {
 	mbt.mode = "tcp"
 	mbt.addr = address
@@ -114,8 +125,13 @@ func (mbt *MBTransporter) Connect() error {
 	}
 	return fmt.Errorf("unknown connection type")
 }
+
 func (mbt *MBTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
 	return mbt.t.Send(aduRequest)
+}
+
+func (mbt *MBTransporter) Close() error {
+	return mbt.t.Close()
 }
 
 /*
