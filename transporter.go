@@ -19,6 +19,7 @@ type ApiTransporter interface {
 	Connect() error
 	Close() error
 	Send([]byte) ([]byte, error, error)
+	ParseID([]byte) byte
 }
 
 type MBTransporter struct {
@@ -31,7 +32,7 @@ type MBTransporter struct {
 	timeout     int64
 	idletimeout int64
 
-	t ApiTransporter
+	ApiTransporter
 }
 
 func NewTransporter() *MBTransporter {
@@ -104,7 +105,7 @@ func (mbt *MBTransporter) Connect() error {
 		if err := rtu.Connect(); err != nil {
 			return err
 		}
-		mbt.t = &rtu
+		mbt.ApiTransporter = &rtu
 		return nil
 	case "tcp":
 		tcp := tcpTransporter{}
@@ -112,7 +113,7 @@ func (mbt *MBTransporter) Connect() error {
 		if err := tcp.Connect(); err != nil {
 			return err
 		}
-		mbt.t = &tcp
+		mbt.ApiTransporter = &tcp
 		return nil
 	case "ascii":
 		ascii := asciiTransporter{}
@@ -120,19 +121,23 @@ func (mbt *MBTransporter) Connect() error {
 		if err := ascii.Connect(); err != nil {
 			return err
 		}
-		mbt.t = &ascii
+		mbt.ApiTransporter = &ascii
 		return nil
 	}
 	return fmt.Errorf("unknown connection type")
 }
 
-func (mbt *MBTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
-	return mbt.t.Send(aduRequest)
-}
+// func (mbt *MBTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
+// 	return mbt.t.Send(aduRequest)
+// }
 
-func (mbt *MBTransporter) Close() error {
-	return mbt.t.Close()
-}
+// func (mbt *MBTransporter) Close() error {
+// 	return mbt.t.Close()
+// }
+
+// func (mbt *MBTransporter) ParseID(aduReqRes []byte) byte {
+// 	return mbt.t.ParseID(aduReqRes)
+// }
 
 /*
 
@@ -261,6 +266,10 @@ func (rtu *rtuTransporter) Set(address string, baud, databits int, parity string
 	rtu.StopBits = stopbits
 	rtu.Timeout = time.Duration(timeout) * time.Millisecond
 	rtu.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
+}
+
+func (rtu *rtuTransporter) ParseID(aduReqRes []byte) byte {
+	return aduReqRes[0]
 }
 
 func (rtu *rtuTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
@@ -413,6 +422,10 @@ func (tcp *tcpTransporter) Set(address string, timeout, idletimeout int64) {
 	tcp.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
+func (tcp *tcpTransporter) ParseID(aduReqRes []byte) byte {
+	return aduReqRes[6]
+}
+
 // Send sends data to server and ensures response length is greater than header length.
 func (tcp *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
 	tcp.mu.Lock()
@@ -430,17 +443,17 @@ func (tcp *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, er
 	if tcp.Timeout > 0 {
 		timeout = tcp.lastActivity.Add(tcp.Timeout)
 	}
-	if err = tcp.conn.SetDeadline(timeout); err != nil {
+	if warn = tcp.conn.SetDeadline(timeout); warn != nil {
 		return
 	}
 	// Send data
 	tcp.logf("modbus: sending % x", aduRequest)
-	if _, err = tcp.conn.Write(aduRequest); err != nil {
+	if _, warn = tcp.conn.Write(aduRequest); warn != nil {
 		return
 	}
 	// Read header first
 	var data [tcpMaxLength]byte
-	if _, err = io.ReadFull(tcp.conn, data[:tcpHeaderSize]); err != nil {
+	if _, warn = io.ReadFull(tcp.conn, data[:tcpHeaderSize]); warn != nil {
 		return
 	}
 	// fmt.Println("===============", data)
@@ -448,17 +461,17 @@ func (tcp *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, er
 	length := int(binary.BigEndian.Uint16(data[4:]))
 	if length <= 0 {
 		tcp.flush(data[:])
-		err = fmt.Errorf("modbus: length in response header '%v' must not be zero", length)
+		warn = fmt.Errorf("modbus: length in response header '%v' must not be zero", length)
 		return
 	}
 	if length > (tcpMaxLength - (tcpHeaderSize - 1)) {
 		tcp.flush(data[:])
-		err = fmt.Errorf("modbus: length in response header '%v' must not greater than '%v'", length, tcpMaxLength-tcpHeaderSize+1)
+		warn = fmt.Errorf("modbus: length in response header '%v' must not greater than '%v'", length, tcpMaxLength-tcpHeaderSize+1)
 		return
 	}
 	// Skip unit id
 	length += tcpHeaderSize - 1
-	if _, err = io.ReadFull(tcp.conn, data[tcpHeaderSize:length]); err != nil {
+	if _, warn = io.ReadFull(tcp.conn, data[tcpHeaderSize:length]); warn != nil {
 		return
 	}
 	aduResponse = data[:length]
@@ -579,6 +592,10 @@ func (ascii *asciiTransporter) Set(address string, baud, databits int, parity st
 	ascii.StopBits = stopbits
 	ascii.Timeout = time.Duration(timeout) * time.Millisecond
 	ascii.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
+}
+
+func (ascii *asciiTransporter) ParseID(aduReqRes []byte) byte {
+	return aduReqRes[0]
 }
 
 func (ascii *asciiTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {

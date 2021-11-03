@@ -19,33 +19,51 @@ type ApiClient interface {
 
 type MBClient struct {
 	mode string
-	cln  ApiClient
+	ApiClient
 }
 
 func NewClient() *MBClient {
 	return &MBClient{}
 }
 
-func (mbc *MBClient) GetID() byte     { return mbc.cln.GetID() }
+func NewSClient(id byte, mode string) *MBClient {
+	mbc := MBClient{}
+	mbc.mode = mode
+	switch strings.ToLower(mbc.mode) {
+	case "rtu":
+		mbc.ApiClient = newRtuClient()
+	case "tcp":
+		mbc.ApiClient = newTcpClient()
+	case "ascii":
+		mbc.ApiClient = newAsciiClient()
+	default:
+		mbc.ApiClient = newRtuClient()
+	}
+	mbc.SetID(id)
+	return &mbc
+}
+
+// func (mbc *MBClient) GetID() byte     { return mbc.cln.GetID() }
 func (mbc *MBClient) GetMode() string { return mbc.mode }
 
 func (mbc *MBClient) Set(id byte, mode string) {
+	mbc.mode = mode
 	switch strings.ToLower(mode) {
 	case "rtu":
-		mbc.cln = newRtuClient()
+		mbc.ApiClient = newRtuClient()
 	case "tcp":
-		mbc.cln = newTcpClient()
+		mbc.ApiClient = newTcpClient()
 	case "ascii":
-		mbc.cln = newAsciiClient()
+		mbc.ApiClient = newAsciiClient()
 	default:
-		mbc.cln = newRtuClient()
+		mbc.ApiClient = newRtuClient()
 	}
-	mbc.cln.SetID(id)
+	mbc.ApiClient.SetID(id)
 }
 
 func (c *MBClient) VerifyID(id byte) error {
-	if id != c.cln.GetID() {
-		return fmt.Errorf("modbus: response slave id '%v' does not match request '%v'", id, c.cln.GetID())
+	if id != c.ApiClient.GetID() {
+		return fmt.Errorf("modbus: response slave id '%v' does not match request '%v'", id, c.ApiClient.GetID())
 	}
 	return nil
 }
@@ -62,7 +80,7 @@ func (c *MBClient) ReadCoils(address, quantity uint16) ([]byte, error) {
 	if quantity < 1 || quantity > 2000 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 2000)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadCoils,
 		Data:         dataBlock(address, quantity),
 	})
@@ -80,7 +98,7 @@ func (c *MBClient) ReadDiscreteInputs(address, quantity uint16) ([]byte, error) 
 	if quantity < 1 || quantity > 2000 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 2000)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadDiscreteInputs,
 		Data:         dataBlock(address, quantity),
 	})
@@ -98,7 +116,7 @@ func (c *MBClient) ReadHoldingRegisters(address, quantity uint16) ([]byte, error
 	if quantity < 1 || quantity > 125 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 125)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadHoldingRegisters,
 		Data:         dataBlock(address, quantity),
 	})
@@ -116,7 +134,7 @@ func (c *MBClient) ReadInputRegisters(address, quantity uint16) ([]byte, error) 
 	if quantity < 1 || quantity > 125 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 125)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadInputRegisters,
 		Data:         dataBlock(address, quantity),
 	})
@@ -135,7 +153,7 @@ func (c *MBClient) WriteSingleCoil(address, value uint16) ([]byte, error) {
 	if value != 0xFF00 && value != 0x0000 {
 		return []byte{0x0}, fmt.Errorf("modbus: state '%v' must be either 0xFF00 (ON) or 0x0000 (OFF)", value)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeWriteSingleCoil,
 		Data:         dataBlock(address, value),
 	})
@@ -146,7 +164,7 @@ func (c *MBClient) WriteSingleCoilBool(address uint16, value bool) ([]byte, erro
 	if value {
 		v = 0xFF00
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeWriteSingleCoil,
 		Data:         dataBlock(address, v),
 	})
@@ -161,7 +179,7 @@ func (c *MBClient) WriteSingleCoilBool(address uint16, value bool) ([]byte, erro
 //  Register address      : 2 bytes
 //  Register value        : 2 bytes
 func (c *MBClient) WriteSingleRegister(address, value uint16) ([]byte, error) {
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeWriteSingleRegister,
 		Data:         dataBlock(address, value),
 	})
@@ -181,7 +199,7 @@ func (c *MBClient) WriteMultipleCoils(address, quantity uint16, value []byte) ([
 	if quantity < 1 || quantity > 1968 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 1968)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeWriteMultipleCoils,
 		Data:         dataBlockSuffix(value, address, quantity),
 	})
@@ -201,7 +219,7 @@ func (c *MBClient) WriteMultipleRegisters(address, quantity uint16, value []byte
 	if quantity < 1 || quantity > 123 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity '%v' must be between '%v' and '%v',", quantity, 1, 123)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeWriteMultipleRegisters,
 		Data:         dataBlockSuffix(value, address, quantity),
 	})
@@ -218,7 +236,7 @@ func (c *MBClient) WriteMultipleRegisters(address, quantity uint16, value []byte
 //  AND-mask              : 2 bytes
 //  OR-mask               : 2 bytes
 func (c *MBClient) MaskWriteRegister(address, andMask, orMask uint16) ([]byte, error) {
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeMaskWriteRegister,
 		Data:         dataBlock(address, andMask, orMask),
 	})
@@ -243,7 +261,7 @@ func (c *MBClient) ReadWriteMultipleRegisters(readAddress, readQuantity, writeAd
 	if writeQuantity < 1 || writeQuantity > 121 {
 		return []byte{0x0}, fmt.Errorf("modbus: quantity to write '%v' must be between '%v' and '%v',", writeQuantity, 1, 121)
 	}
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadWriteMultipleRegisters,
 		Data:         dataBlockSuffix(value, readAddress, readQuantity, writeAddress, writeQuantity),
 	})
@@ -259,7 +277,7 @@ func (c *MBClient) ReadWriteMultipleRegisters(readAddress, readQuantity, writeAd
 //  FIFO count            : 2 bytes (<=31)
 //  FIFO value register   : Nx2 bytes
 func (c *MBClient) ReadFIFOQueue(address uint16) ([]byte, error) {
-	return c.cln.Encode(&ProtocolDataUnit{
+	return c.ApiClient.Encode(&ProtocolDataUnit{
 		FunctionCode: FuncCodeReadFIFOQueue,
 		Data:         dataBlock(address),
 	})
@@ -273,12 +291,12 @@ func newRtuClient() *rtuClient {
 	return &rtuClient{}
 }
 
-func (crtu *rtuClient) SetID(id byte) {
-	crtu.id = id
+func (rtu *rtuClient) SetID(id byte) {
+	rtu.id = id
 }
 
-func (crtu *rtuClient) GetID() byte {
-	return crtu.id
+func (rtu *rtuClient) GetID() byte {
+	return rtu.id
 }
 
 // Encode encodes PDU in a RTU frame:
@@ -286,7 +304,7 @@ func (crtu *rtuClient) GetID() byte {
 //  Function        : 1 byte
 //  Data            : 0 up to 252 bytes
 //  CRC             : 2 byte
-func (crtu *rtuClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
+func (rtu *rtuClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 	length := len(pdu.Data) + 4
 	if length > rtuMaxSize {
 		err = fmt.Errorf("modbus: length of data '%v' must not be bigger than '%v'", length, rtuMaxSize)
@@ -294,7 +312,7 @@ func (crtu *rtuClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 	}
 	adu = make([]byte, length)
 
-	adu[0] = crtu.id
+	adu[0] = rtu.id
 	adu[1] = pdu.FunctionCode
 	copy(adu[2:], pdu.Data)
 
@@ -309,7 +327,7 @@ func (crtu *rtuClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 }
 
 // Verify verifies response length and slave id.
-func (crtu *rtuClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
+func (rtu *rtuClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
 	length := len(aduResponse)
 	// Minimum size (including address, function and CRC)
 	if length < rtuMinSize {
@@ -325,7 +343,7 @@ func (crtu *rtuClient) Verify(aduRequest []byte, aduResponse []byte) (err error)
 }
 
 // Decode extracts PDU from RTU frame and verify CRC.
-func (crtu *rtuClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
+func (rtu *rtuClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
 	length := len(adu)
 	// Calculate checksum
 	var crc crc
@@ -334,6 +352,9 @@ func (crtu *rtuClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
 	if checksum != crc.value() {
 		err = fmt.Errorf("modbus: response crc '%v' does not match expected '%v'", checksum, crc.value())
 		return
+	}
+	if rtu.id != adu[0] {
+		err = fmt.Errorf("modbus invalid address %v != %v", rtu.id, adu[0])
 	}
 	// Function code & data
 	pdu = &ProtocolDataUnit{}
@@ -351,12 +372,12 @@ func newTcpClient() *tcpClient {
 	return &tcpClient{}
 }
 
-func (ctcp *tcpClient) SetID(id byte) {
-	ctcp.id = id
+func (tcp *tcpClient) SetID(id byte) {
+	tcp.id = id
 }
 
-func (ctcp *tcpClient) GetID() byte {
-	return ctcp.id
+func (tcp *tcpClient) GetID() byte {
+	return tcp.id
 }
 
 // Encode adds modbus application protocol header:
@@ -366,11 +387,11 @@ func (ctcp *tcpClient) GetID() byte {
 //  Unit identifier: 1 byte
 //  Function code: 1 byte
 //  Data: n bytes
-func (ctcp *tcpClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
+func (tcp *tcpClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 	adu = make([]byte, tcpHeaderSize+1+len(pdu.Data))
 
 	// Transaction identifier
-	transactionId := atomic.AddUint32(&ctcp.transactionId, 1)
+	transactionId := atomic.AddUint32(&tcp.transactionId, 1)
 	binary.BigEndian.PutUint16(adu, uint16(transactionId))
 	// Protocol identifier
 	binary.BigEndian.PutUint16(adu[2:], tcpProtocolIdentifier)
@@ -378,7 +399,7 @@ func (ctcp *tcpClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 	length := uint16(1 + 1 + len(pdu.Data))
 	binary.BigEndian.PutUint16(adu[4:], length)
 	// Unit identifier
-	adu[6] = ctcp.id
+	adu[6] = tcp.id
 
 	// PDU
 	adu[tcpHeaderSize] = pdu.FunctionCode
@@ -387,7 +408,7 @@ func (ctcp *tcpClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 }
 
 // Verify confirms transaction, protocol and unit id.
-func (ctcp *tcpClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
+func (tcp *tcpClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
 	// Transaction id
 	responseVal := binary.BigEndian.Uint16(aduResponse)
 	requestVal := binary.BigEndian.Uint16(aduRequest)
@@ -415,13 +436,16 @@ func (ctcp *tcpClient) Verify(aduRequest []byte, aduResponse []byte) (err error)
 //  Protocol identifier: 2 bytes
 //  Length: 2 bytes
 //  Unit identifier: 1 byte
-func (ctcp *tcpClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
+func (tcp *tcpClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
 	// Read length value in the header
 	length := binary.BigEndian.Uint16(adu[4:])
 	pduLength := len(adu) - tcpHeaderSize
 	if pduLength <= 0 || pduLength != int(length-1) {
 		err = fmt.Errorf("modbus: length in response '%v' does not match pdu data length '%v'", length-1, pduLength)
 		return
+	}
+	if tcp.id != adu[6] {
+		err = fmt.Errorf("modbus invalid address %v != %v", tcp.id, adu[0])
 	}
 	pdu = &ProtocolDataUnit{}
 	// The first byte after header is function code
@@ -438,12 +462,12 @@ func newAsciiClient() *asciiClient {
 	return &asciiClient{}
 }
 
-func (cascii *asciiClient) SetID(id byte) {
-	cascii.id = id
+func (ascii *asciiClient) SetID(id byte) {
+	ascii.id = id
 }
 
-func (cascii *asciiClient) GetID() byte {
-	return cascii.id
+func (ascii *asciiClient) GetID() byte {
+	return ascii.id
 }
 
 // Encode encodes PDU in a ASCII frame:
@@ -453,13 +477,13 @@ func (cascii *asciiClient) GetID() byte {
 //  Data            : 0 up to 2x252 chars
 //  LRC             : 2 chars
 //  End             : 2 chars
-func (cascii *asciiClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
+func (ascii *asciiClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error) {
 	var buf bytes.Buffer
 
 	if _, err = buf.WriteString(asciiStart); err != nil {
 		return
 	}
-	if err = writeHex(&buf, []byte{cascii.id, pdu.FunctionCode}); err != nil {
+	if err = writeHex(&buf, []byte{ascii.id, pdu.FunctionCode}); err != nil {
 		return
 	}
 	if err = writeHex(&buf, pdu.Data); err != nil {
@@ -468,7 +492,7 @@ func (cascii *asciiClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error)
 	// Exclude the beginning colon and terminating CRLF pair characters
 	var lrc lrc
 	lrc.reset()
-	lrc.pushByte(cascii.id).pushByte(pdu.FunctionCode).pushBytes(pdu.Data)
+	lrc.pushByte(ascii.id).pushByte(pdu.FunctionCode).pushBytes(pdu.Data)
 	if err = writeHex(&buf, []byte{lrc.value()}); err != nil {
 		return
 	}
@@ -480,7 +504,7 @@ func (cascii *asciiClient) Encode(pdu *ProtocolDataUnit) (adu []byte, err error)
 }
 
 // Verify verifies response length, frame boundary and slave id.
-func (cascii *asciiClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
+func (ascii *asciiClient) Verify(aduRequest []byte, aduResponse []byte) (err error) {
 	length := len(aduResponse)
 	// Minimum size (including address, function and LRC)
 	if length < asciiMinSize+6 {
@@ -521,7 +545,7 @@ func (cascii *asciiClient) Verify(aduRequest []byte, aduResponse []byte) (err er
 }
 
 // Decode extracts PDU from ASCII frame and verify LRC.
-func (cascii *asciiClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
+func (ascii *asciiClient) Decode(adu []byte) (pdu *ProtocolDataUnit, err error) {
 	pdu = &ProtocolDataUnit{}
 	// Slave address
 	address, err := readHex(adu[1:])
