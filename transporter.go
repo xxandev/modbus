@@ -443,12 +443,12 @@ func (tcp *tcpTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, er
 	if tcp.Timeout > 0 {
 		timeout = tcp.lastActivity.Add(tcp.Timeout)
 	}
-	if warn = tcp.conn.SetDeadline(timeout); warn != nil {
+	if err = tcp.conn.SetDeadline(timeout); err != nil {
 		return
 	}
 	// Send data
 	tcp.logf("modbus: sending % x", aduRequest)
-	if _, warn = tcp.conn.Write(aduRequest); warn != nil {
+	if _, err = tcp.conn.Write(aduRequest); err != nil {
 		return
 	}
 	// Read header first
