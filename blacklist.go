@@ -27,7 +27,7 @@ func (bl *blacklist) SetNoticeClean(fn func() error) {
 	bl.mutex.Unlock()
 }
 
-func (bl *blacklist) SetDeviceBlock(fn func(id byte) error) {
+func (bl *blacklist) SetNoticeDeviceBlock(fn func(id byte) error) {
 	bl.mutex.Lock()
 	bl.nblock = fn
 	bl.mutex.Unlock()
