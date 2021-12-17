@@ -19,112 +19,122 @@ type ApiTransporter interface {
 	Connect() error
 	Close() error
 	Send([]byte) ([]byte, error, error)
-	ParseID([]byte) byte
+	Spec([]byte) (byte, byte)
+	GetAddress() string
 }
 
 type MBTransporter struct {
-	mode        string
-	addr        string
-	baudrate    int
-	databits    int
-	parity      string
-	stopbits    int
-	timeout     int64
-	idletimeout int64
+	// mode string
+	// addr        string
+	// baudrate    int
+	// databits    int
+	// parity      string
+	// stopbits    int
+	// timeout     int64
+	// idletimeout int64
 
 	ApiTransporter
+	success bool
 }
 
 func NewTransporter() *MBTransporter {
 	return &MBTransporter{}
 }
 
-func (mbt *MBTransporter) GetMode() string       { return mbt.mode }
-func (mbt *MBTransporter) GetAddress() string    { return mbt.addr }
-func (mbt *MBTransporter) GetBaudRate() int      { return mbt.baudrate }
-func (mbt *MBTransporter) GetDataBits() int      { return mbt.databits }
-func (mbt *MBTransporter) GetParity() string     { return mbt.parity }
-func (mbt *MBTransporter) GetStopBits() int      { return mbt.stopbits }
-func (mbt *MBTransporter) GetTimeout() int64     { return mbt.timeout }
-func (mbt *MBTransporter) GetIdleTimeout() int64 { return mbt.idletimeout }
+// func (mbt *MBTransporter) GetMode() string       { return mbt.mode }
+// func (mbt *MBTransporter) GetAddress() string    { return mbt.addr }
+// func (mbt *MBTransporter) GetBaudRate() int      { return mbt.baudrate }
+// func (mbt *MBTransporter) GetDataBits() int      { return mbt.databits }
+// func (mbt *MBTransporter) GetParity() string     { return mbt.parity }
+// func (mbt *MBTransporter) GetStopBits() int      { return mbt.stopbits }
+// func (mbt *MBTransporter) GetTimeout() int64     { return mbt.timeout }
+// func (mbt *MBTransporter) GetIdleTimeout() int64 { return mbt.idletimeout }
 
-func (mbt *MBTransporter) SetMode(value string)       { mbt.mode = value }
-func (mbt *MBTransporter) SetAddress(value string)    { mbt.addr = value }
-func (mbt *MBTransporter) SetBaudRate(value int)      { mbt.baudrate = value }
-func (mbt *MBTransporter) SetDataBits(value int)      { mbt.databits = value }
-func (mbt *MBTransporter) SetParity(value string)     { mbt.parity = value }
-func (mbt *MBTransporter) SetStopBits(value int)      { mbt.stopbits = value }
-func (mbt *MBTransporter) SetTimeout(value int64)     { mbt.timeout = value }
-func (mbt *MBTransporter) SetIdleTimeout(value int64) { mbt.idletimeout = value }
+// func (mbt *MBTransporter) SetMode(value string)       { mbt.mode = value }
+// func (mbt *MBTransporter) SetAddress(value string)    { mbt.addr = value }
+// func (mbt *MBTransporter) SetBaudRate(value int)      { mbt.baudrate = value }
+// func (mbt *MBTransporter) SetDataBits(value int)      { mbt.databits = value }
+// func (mbt *MBTransporter) SetParity(value string)     { mbt.parity = value }
+// func (mbt *MBTransporter) SetStopBits(value int)      { mbt.stopbits = value }
+// func (mbt *MBTransporter) SetTimeout(value int64)     { mbt.timeout = value }
+// func (mbt *MBTransporter) SetIdleTimeout(value int64) { mbt.idletimeout = value }
 
-func (mbt *MBTransporter) Set(mode, address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
-	mbt.mode = mode
-	mbt.addr = address
-	mbt.baudrate = baud
-	mbt.databits = databits
-	mbt.parity = parity
-	mbt.stopbits = stopbits
-	mbt.timeout = timeout
-	mbt.idletimeout = idletimeout
-}
+// func (mbt *MBTransporter) Set(mode, address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+// 	mbt.mode = mode
+// 	mbt.addr = address
+// 	mbt.baudrate = baud
+// 	mbt.databits = databits
+// 	mbt.parity = parity
+// 	mbt.stopbits = stopbits
+// 	mbt.timeout = timeout
+// 	mbt.idletimeout = idletimeout
+// }
 
-func (mbt *MBTransporter) SetTCP(address string, timeout, idletimeout int64) {
-	mbt.mode = "tcp"
-	mbt.addr = address
-	mbt.timeout = timeout
-	mbt.idletimeout = idletimeout
-}
+// func (mbt *MBTransporter) SetTCP(address string, timeout, idletimeout int64) {
+// 	mbt.mode = "tcp"
+// 	mbt.addr = address
+// 	mbt.timeout = timeout
+// 	mbt.idletimeout = idletimeout
+// }
 
-func (mbt *MBTransporter) SetRTU(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
-	mbt.mode = "rtu"
-	mbt.addr = address
-	mbt.baudrate = baud
-	mbt.databits = databits
-	mbt.parity = parity
-	mbt.stopbits = stopbits
-	mbt.timeout = timeout
-	mbt.idletimeout = idletimeout
-}
+// func (mbt *MBTransporter) SetRTU(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+// 	mbt.mode = "rtu"
+// 	mbt.addr = address
+// 	mbt.baudrate = baud
+// 	mbt.databits = databits
+// 	mbt.parity = parity
+// 	mbt.stopbits = stopbits
+// 	mbt.timeout = timeout
+// 	mbt.idletimeout = idletimeout
+// }
 
-func (mbt *MBTransporter) SetASCII(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
-	mbt.mode = "ascii"
-	mbt.addr = address
-	mbt.baudrate = baud
-	mbt.databits = databits
-	mbt.parity = parity
-	mbt.stopbits = stopbits
-	mbt.timeout = timeout
-	mbt.idletimeout = idletimeout
-}
+// func (mbt *MBTransporter) SetASCII(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
+// 	mbt.mode = "ascii"
+// 	mbt.addr = address
+// 	mbt.baudrate = baud
+// 	mbt.databits = databits
+// 	mbt.parity = parity
+// 	mbt.stopbits = stopbits
+// 	mbt.timeout = timeout
+// 	mbt.idletimeout = idletimeout
+// }
 
-func (mbt *MBTransporter) Connect() error {
-	switch strings.ToLower(mbt.mode) {
+func (mbt *MBTransporter) Connect(mode, address string, baudrate, databits int, parity string, stopbits int, timeout, idletimeout int64) error {
+	mbt.success = false
+	switch strings.ToLower(mode) {
 	case "rtu":
 		rtu := rtuTransporter{}
-		rtu.Set(mbt.addr, mbt.baudrate, mbt.databits, mbt.parity, mbt.stopbits, mbt.timeout, mbt.idletimeout)
+		rtu.Set(address, baudrate, databits, parity, stopbits, timeout, idletimeout)
 		if err := rtu.Connect(); err != nil {
 			return err
 		}
 		mbt.ApiTransporter = &rtu
+		mbt.success = true
 		return nil
 	case "tcp":
 		tcp := tcpTransporter{}
-		tcp.Set(mbt.addr, mbt.timeout, mbt.idletimeout)
+		tcp.Set(address, timeout, idletimeout)
 		if err := tcp.Connect(); err != nil {
 			return err
 		}
 		mbt.ApiTransporter = &tcp
+		mbt.success = true
 		return nil
 	case "ascii":
 		ascii := asciiTransporter{}
-		ascii.Set(mbt.addr, mbt.baudrate, mbt.databits, mbt.parity, mbt.stopbits, mbt.timeout, mbt.idletimeout)
+		ascii.Set(address, baudrate, databits, parity, stopbits, timeout, idletimeout)
 		if err := ascii.Connect(); err != nil {
 			return err
 		}
 		mbt.ApiTransporter = &ascii
+		mbt.success = true
 		return nil
 	}
 	return fmt.Errorf("unknown connection type")
+}
+
+func (mbt *MBTransporter) FirstConnectSuccess() bool {
+	return mbt.success
 }
 
 // func (mbt *MBTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
@@ -254,9 +264,9 @@ type rtuTransporter struct {
 	serialPort
 }
 
-// func NewRTU(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) *RTUtransporter {
-// 	return &RTUtransporter{}
-// }
+func (rtu *rtuTransporter) GetAddress() string {
+	return rtu.Address
+}
 
 func (rtu *rtuTransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
 	rtu.Address = address
@@ -268,8 +278,8 @@ func (rtu *rtuTransporter) Set(address string, baud, databits int, parity string
 	rtu.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-func (rtu *rtuTransporter) ParseID(aduReqRes []byte) byte {
-	return aduReqRes[0]
+func (rtu *rtuTransporter) Spec(aduReqRes []byte) (byte, byte) {
+	return aduReqRes[0], aduReqRes[1]
 }
 
 func (rtu *rtuTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {
@@ -415,6 +425,9 @@ type tcpTransporter struct {
 // 	// t.IdleTimeout = tcpIdleTimeout
 // 	return &TCPtransporter{}
 // }
+func (tcp *tcpTransporter) GetAddress() string {
+	return tcp.Address
+}
 
 func (tcp *tcpTransporter) Set(address string, timeout, idletimeout int64) {
 	tcp.Address = address
@@ -422,8 +435,8 @@ func (tcp *tcpTransporter) Set(address string, timeout, idletimeout int64) {
 	tcp.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-func (tcp *tcpTransporter) ParseID(aduReqRes []byte) byte {
-	return aduReqRes[6]
+func (tcp *tcpTransporter) Spec(aduReqRes []byte) (byte, byte) {
+	return aduReqRes[6], aduReqRes[7]
 }
 
 // Send sends data to server and ensures response length is greater than header length.
@@ -584,6 +597,10 @@ type asciiTransporter struct {
 	serialPort
 }
 
+func (ascii *asciiTransporter) GetAddress() string {
+	return ascii.Address
+}
+
 func (ascii *asciiTransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {
 	ascii.Address = address
 	ascii.BaudRate = baud
@@ -594,8 +611,8 @@ func (ascii *asciiTransporter) Set(address string, baud, databits int, parity st
 	ascii.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
-func (ascii *asciiTransporter) ParseID(aduReqRes []byte) byte {
-	return aduReqRes[0]
+func (ascii *asciiTransporter) Spec(aduReqRes []byte) (byte, byte) {
+	return aduReqRes[0], aduReqRes[1]
 }
 
 func (ascii *asciiTransporter) Send(aduRequest []byte) (aduResponse []byte, warn, err error) {

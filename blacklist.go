@@ -7,15 +7,15 @@ import (
 
 type blacklist struct { //concurrent map read and map write
 	mutex   sync.Mutex
-	limit   uint
-	timeout uint
+	limit   uint16
+	timeout time.Duration
 	ticker  *time.Ticker
-	list    map[byte]uint
+	list    map[byte]uint16
 	nclean  func() error
 	nblock  func(id byte) error
 }
 
-func (bl *blacklist) SetLimitFailedSendes(value uint) {
+func (bl *blacklist) SetLimitFailedSendes(value uint16) {
 	bl.mutex.Lock()
 	bl.limit = value
 	bl.mutex.Unlock()
@@ -33,15 +33,15 @@ func (bl *blacklist) SetNoticeDeviceBlock(fn func(id byte) error) {
 	bl.mutex.Unlock()
 }
 
-func (bl *blacklist) init(limit, timeout uint) {
-	bl.mutex.Lock()
-	bl.limit = limit
-	bl.timeout = timeout
-	bl.list = make(map[byte]uint)
+func (bl *blacklist) init(limit, timeout uint16) {
 	if bl.timeout == 0 {
 		bl.timeout = 60
 	}
-	bl.ticker = time.NewTicker(time.Duration(bl.timeout) * time.Minute)
+	bl.mutex.Lock()
+	bl.limit = limit
+	bl.timeout = time.Duration(timeout+1) * time.Minute
+	bl.list = make(map[byte]uint16)
+	bl.ticker = time.NewTicker(time.Duration(bl.timeout+1) * time.Minute)
 	go func() {
 		for range bl.ticker.C {
 			if bl.nclean != nil {
@@ -53,7 +53,7 @@ func (bl *blacklist) init(limit, timeout uint) {
 	bl.mutex.Unlock()
 }
 
-func (bl *blacklist) Get(id byte) (blocked bool, notresponse uint) {
+func (bl *blacklist) Get(id byte) (blocked bool, notresponse uint16) {
 	bl.mutex.Lock()
 	defer bl.mutex.Unlock()
 	if bl.list == nil || bl.limit == 0 {
@@ -68,10 +68,10 @@ func (bl *blacklist) Get(id byte) (blocked bool, notresponse uint) {
 	return bl.list[id] > bl.limit, bl.list[id]
 }
 
-func (bl *blacklist) ResetTimeoutClean() {
+func (bl *blacklist) TimeoutClean() {
 	bl.mutex.Lock()
 	if bl.ticker != nil {
-		bl.ticker.Reset(time.Duration(bl.timeout) * time.Minute)
+		bl.ticker.Reset(bl.timeout)
 	}
 	bl.mutex.Unlock()
 }
@@ -105,7 +105,7 @@ func (bl *blacklist) Clean() {
 	bl.mutex.Unlock()
 }
 
-func NewBlacklist(limitFailedSendes, timeoutClean uint) *blacklist {
+func NewBlacklist(limitFailedSendes, timeoutClean uint16) *blacklist {
 	var bl blacklist
 	bl.init(limitFailedSendes, timeoutClean)
 	return &bl
