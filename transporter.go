@@ -21,6 +21,7 @@ type ApiTransporter interface {
 	Send([]byte) ([]byte, error, error)
 	Spec([]byte) (byte, byte)
 	GetAddress() string
+	SetLogger(*log.Logger)
 }
 
 type MBTransporter struct {
@@ -278,6 +279,10 @@ func (rtu *rtuTransporter) Set(address string, baud, databits int, parity string
 	rtu.IdleTimeout = time.Duration(idletimeout) * time.Millisecond
 }
 
+func (rtu *rtuTransporter) SetLogger(logger *log.Logger) {
+	rtu.Logger = logger
+}
+
 func (rtu *rtuTransporter) Spec(aduReqRes []byte) (byte, byte) {
 	return aduReqRes[0], aduReqRes[1]
 }
@@ -427,6 +432,10 @@ type tcpTransporter struct {
 // }
 func (tcp *tcpTransporter) GetAddress() string {
 	return tcp.Address
+}
+
+func (tcp *tcpTransporter) SetLogger(logger *log.Logger) {
+	tcp.Logger = logger
 }
 
 func (tcp *tcpTransporter) Set(address string, timeout, idletimeout int64) {
@@ -599,6 +608,10 @@ type asciiTransporter struct {
 
 func (ascii *asciiTransporter) GetAddress() string {
 	return ascii.Address
+}
+
+func (ascii *asciiTransporter) SetLogger(logger *log.Logger) {
+	ascii.Logger = logger
 }
 
 func (ascii *asciiTransporter) Set(address string, baud, databits int, parity string, stopbits int, timeout, idletimeout int64) {

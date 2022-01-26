@@ -33,20 +33,17 @@ func (bl *blacklist) SetNoticeDeviceBlock(fn func(id byte) error) {
 	bl.mutex.Unlock()
 }
 
-func (bl *blacklist) init(limit, timeout uint16) {
+func (bl *blacklist) init(limit uint16, timeout uint32) {
+	bl.mutex.Lock()
 	if bl.timeout == 0 {
 		bl.timeout = 60
 	}
-	bl.mutex.Lock()
 	bl.limit = limit
-	bl.timeout = time.Duration(timeout+1) * time.Minute
+	bl.timeout = time.Duration(timeout) * time.Minute
 	bl.list = make(map[byte]uint16)
-	bl.ticker = time.NewTicker(time.Duration(bl.timeout+1) * time.Minute)
+	bl.ticker = time.NewTicker(bl.timeout)
 	go func() {
 		for range bl.ticker.C {
-			if bl.nclean != nil {
-				bl.nclean()
-			}
 			bl.Clean()
 		}
 	}()
@@ -105,7 +102,7 @@ func (bl *blacklist) Clean() {
 	bl.mutex.Unlock()
 }
 
-func NewBlacklist(limitFailedSendes, timeoutClean uint16) *blacklist {
+func NewBlacklist(limitFailedSendes uint16, timeoutClean uint32) *blacklist {
 	var bl blacklist
 	bl.init(limitFailedSendes, timeoutClean)
 	return &bl
