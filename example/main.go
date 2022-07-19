@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alpr777/modbus"
+	"github.com/xxandev/modbus"
 )
 
 func init() {}
